@@ -1,0 +1,58 @@
+version: '3'
+
+secrets:
+  cf-token:
+    file: ./cf-token
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - cf-token
+    env_file:
+      - .env
+    networks:
+      - proxy
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      - TRAEFIK_DASHBOARD_CREDENTIALS=${TRAEFIK_DASHBOARD_CREDENTIALS}
+      # - CF_API_EMAIL=your@email.com # Cloudflare email
+      - CF_API_EMAIL=${CF_API_EMAIL} # Cloudflare email from .env file
+      # - CF_DNS_API_TOKEN=YOUR-TOKEN # Cloudflare API Token
+      - CF_DNS_API_TOKEN_FILE=/run/secrets/cf-token # see https://doc.traefik.io/traefik/https/acme/#providers
+      # token file is the proper way to do it
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/ubuntu/docker/traefik/data/traefik.yml:/traefik.yml:ro
+      - /home/ubuntu/docker/traefik/data/acme.json:/acme.json # acme.json is where traefik stores the certifcates, you have to create as an empty file and set the permissions to 600
+      - /home/ubuntu/docker/traefik/data/config.yml:/config.yml:ro
+      - /home/ubuntu/docker/traefik/data/logs:/var/log/traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.rule=Host(`traefik-dashboard.local.yourdomain.com`)" # if you want a internal domain, get the wildcard cert for it and then choos traefik-dashboard.home.local.yourdomain.com or what you want
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_CREDENTIALS}"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=https"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik-dashboard.local.yourdomain.com`)" # if you want a internal domain, get the wildcard cert for it and then choos traefik-dashboard.home.local.yourdomain.com or what you want
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
+      #- "traefik.http.routers.traefik-secure.tls.domains[0].main=home.local.yourdomain.com" # If you want *.home.local.yourdomain.com subdomain or something else, you have to get the certifcates at first.
+      #- "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.home.local.yourdomain.com" # get a wildcard certificat for your .home.local.yourdomain.com
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main=local.yourdomain.com" #if you use the .home.local.yourdomain.com entry you have to change the [0] into [1]
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.local.yourdomain.com" # same here, change 0 to 1
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+
+networks:
+  proxy:
+    name: proxy
+    external: true
